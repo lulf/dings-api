@@ -59,6 +59,26 @@ func createSchema(deviceFetcher deviceFetcherFunc) graphql.Schema {
 		},
 	)
 
+	var eventType = graphql.NewObject(
+		graphql.ObjectConfig{
+			Name: "Event",
+			Fields: graphql.Fields{
+				"id": &graphql.Field{
+					Type: graphql.String,
+				},
+				"deviceId": &graphql.Field{
+					Type: graphql.String,
+				},
+				"CreationTime": &graphql.Field{
+					Type: graphql.String,
+				},
+				"Payload": &graphql.Field{
+					Type: graphql.String,
+				},
+			},
+		},
+	)
+
 	var queryType = graphql.NewObject(
 		graphql.ObjectConfig{
 			Name: "Query",
@@ -70,14 +90,15 @@ func createSchema(deviceFetcher deviceFetcherFunc) graphql.Schema {
 						return data, err
 					},
 				},
-				/*
-					"events": &graphql.Field{
-						Type: graphql.NewList(eventType),
+				"events": &graphql.Field{
+					Type: graphql.NewList(eventType),
+					/*
 						Args: graphql.FieldConfigArgument {
 							"since", &graphql
 						},
-					},
-				*/
+					*/
+
+				},
 			},
 		})
 
