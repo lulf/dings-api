@@ -5,70 +5,89 @@
 package main
 
 import (
-	"encoding/json"
+	"flag"
 	"fmt"
+	"os"
+
+	"encoding/json"
 	"io/ioutil"
 	"net/http"
 
 	"github.com/graphql-go/graphql"
+	// "github.com/lulf/teig-event-sink/pkg/eventstore"
 )
 
-type device struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Sensors     []string `json:"sensors"`
+type deviceRegistryResponse struct {
+	Devices []device `json:"devices"`
 }
 
-var data map[string]device
+type device struct {
+	ID          string   `json:"device-id"`
+	Enabled     bool     `json:"enabled"`
+	Name        string   `json:"name,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Sensors     []string `json:"sensors,omitempty"`
+}
 
-var deviceType = graphql.NewObject(
-	graphql.ObjectConfig{
-		Name: "Device",
-		Fields: graphql.Fields{
-			"id": &graphql.Field{
-				Type: graphql.String,
-			},
-			"name": &graphql.Field{
-				Type: graphql.String,
-			},
-			"description": &graphql.Field{
-				Type: graphql.String,
-			},
-			"sensors": &graphql.Field{
-				Type: graphql.NewList(graphql.String),
-			},
-		},
-	},
-)
+type deviceFetcherFunc func() ([]device, error)
 
-var queryType = graphql.NewObject(
-	graphql.ObjectConfig{
-		Name: "Query",
-		Fields: graphql.Fields{
-			"device": &graphql.Field{
-				Type: deviceType,
-				Args: graphql.FieldConfigArgument{
-					"id": &graphql.ArgumentConfig{
-						Type: graphql.String,
+func createSchema(deviceFetcher deviceFetcherFunc) graphql.Schema {
+	var deviceType = graphql.NewObject(
+		graphql.ObjectConfig{
+			Name: "Device",
+			Fields: graphql.Fields{
+				"id": &graphql.Field{
+					Type: graphql.String,
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						d := p.Source.(device)
+						return d.ID, nil
 					},
 				},
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					idQuery, isOK := p.Args["id"].(string)
-					if isOK {
-						return data[idQuery], nil
-					}
-					return nil, nil
+				"enabled": &graphql.Field{
+					Type: graphql.Boolean,
+				},
+				"name": &graphql.Field{
+					Type: graphql.String,
+				},
+				"description": &graphql.Field{
+					Type: graphql.String,
+				},
+				"sensors": &graphql.Field{
+					Type: graphql.NewList(graphql.String),
 				},
 			},
 		},
-	})
+	)
 
-var schema, _ = graphql.NewSchema(
-	graphql.SchemaConfig{
-		Query: queryType,
-	},
-)
+	var queryType = graphql.NewObject(
+		graphql.ObjectConfig{
+			Name: "Query",
+			Fields: graphql.Fields{
+				"deviceList": &graphql.Field{
+					Type: graphql.NewList(deviceType),
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						data, err := deviceFetcher()
+						return data, err
+					},
+				},
+				/*
+					"events": &graphql.Field{
+						Type: graphql.NewList(eventType),
+						Args: graphql.FieldConfigArgument {
+							"since", &graphql
+						},
+					},
+				*/
+			},
+		})
+
+	var schema, _ = graphql.NewSchema(
+		graphql.SchemaConfig{
+			Query: queryType,
+		},
+	)
+	return schema
+}
 
 func executeQuery(query string, schema graphql.Schema) *graphql.Result {
 	result := graphql.Do(graphql.Params{
@@ -82,7 +101,45 @@ func executeQuery(query string, schema graphql.Schema) *graphql.Result {
 }
 
 func main() {
-	_ = importJSONDataFromFile("data.json", &data)
+	var eventstoreAddr string
+	var deviceRegistrationApi string
+	var tenantId string
+	var tenantPassword string
+	flag.StringVar(&eventstoreAddr, "a", "amqp://127.0.0.1:5672", "Address of AMQP event store")
+	flag.StringVar(&deviceRegistrationApi, "d", "https://manage.bosch-iot-hub.com/registration", "Device Registration API")
+	flag.StringVar(&tenantId, "t", "", "Tenant ID")
+	flag.StringVar(&tenantPassword, "p", "", "Tenant Password")
+
+	flag.Usage = func() {
+		fmt.Printf("Usage of %s:\n", os.Args[0])
+		fmt.Printf("    [-a event_store_url] [-d device_registration_api_url] -t tenant_id -p password \n")
+	}
+	flag.Parse()
+
+	username := fmt.Sprintf("device-registry@%s", tenantId)
+	deviceRegistryClient := &http.Client{}
+
+	schema := createSchema(func() ([]device, error) {
+		req, err := http.NewRequest("GET", fmt.Sprintf("%s/%s", deviceRegistrationApi, tenantId), nil)
+		if err != nil {
+			return nil, err
+		}
+		req.SetBasicAuth(username, tenantPassword)
+
+		resp, err := deviceRegistryClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		body, err := ioutil.ReadAll(resp.Body)
+
+		var result deviceRegistryResponse
+		err = json.Unmarshal(body, &result)
+		if err != nil {
+			return nil, err
+		}
+		return result.Devices, nil
+	})
 
 	http.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
 		result := executeQuery(r.URL.Query().Get("query"), schema)
@@ -90,7 +147,6 @@ func main() {
 	})
 
 	fmt.Println("Now server is running on port 8080")
-	fmt.Println("Test with Get      : curl -g 'http://localhost:8080/graphql?query={device(id:\"1\"){name}}'")
 	http.ListenAndServe(":8080", nil)
 }
 
