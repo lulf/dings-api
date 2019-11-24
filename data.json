@@ -1,0 +1,8 @@
+{
+  "4711": {
+    "id": "4711",
+    "name": "Motion Sensor 1",
+    "description": "Motion sensor in St. Olavsgate 14c",
+    "sensors": ["motion"]
+  }
+}
