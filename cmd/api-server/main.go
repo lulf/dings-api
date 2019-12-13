@@ -12,6 +12,7 @@ import (
 	"os"
 	"sync"
 
+	"crypto/subtle"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
@@ -127,8 +128,10 @@ func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc
 						},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						fmt.Println("Resolving events")
 						deviceId, ok := p.Args["deviceId"].(string)
 						if ok {
+							fmt.Println("Resolving events for device", deviceId)
 							return eventFetcher(deviceId)
 						}
 						return nil, nil
@@ -200,39 +203,55 @@ func main() {
 			return nil, err
 		}
 		fmt.Println("Devices", result.Devices)
+		/*
+			return []device{
+				device{
+					ID:          "1",
+					Enabled:     true,
+					Name:        "test1",
+					Description: "desc1",
+					Sensors:     []string{"s1", "s2"},
+					Events:      []event{},
+				},
+			}, nil
+		*/
 		return result.Devices, nil
 	}, func(deviceId string) ([]event, error) {
 		cache.mutex.Lock()
 		defer cache.mutex.Unlock()
 		var ret []event = make([]event, 0)
 		for _, e := range cache.data {
+			fmt.Println("Comparing", e.DeviceId, deviceId)
 			if e.DeviceId == deviceId {
+				fmt.Println("Compared", e.DeviceId, deviceId)
 				ret = append(ret, e)
 			}
 		}
+		fmt.Println("Got events", ret)
 		return ret, nil
 	})
 
-	http.HandleFunc("/graphql", BasicAuth(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept")
-		if r.Method == "POST" {
-			body, err := ioutil.ReadAll(r.Body)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
+	http.HandleFunc("/graphql", //BasicAuth(
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept")
+			if r.Method == "POST" {
+				body, err := ioutil.ReadAll(r.Body)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				fmt.Println("BODY: ", string(body))
+				var data queryBody
+				err = json.Unmarshal(body, &data)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				result := executeQuery(data.Query, schema)
+				json.NewEncoder(w).Encode(result)
 			}
-			fmt.Println("BODY: ", string(body))
-			var data queryBody
-			err = json.Unmarshal(body, &data)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			result := executeQuery(data.Query, schema)
-			json.NewEncoder(w).Encode(result)
-		}
-	}, "test", "test", "teig"))
+		}) //, "test", "test", "teig"))
 
 	log.Println("Now server is running on port 8080")
 	http.ListenAndServe(":8080", nil)
@@ -287,6 +306,7 @@ func syncEventCache(eventStoreUrl string, cache *eventCache) error {
 			log.Print("Error decoding message:", err)
 		} else {
 			cache.data = append(cache.data, result)
+			log.Println("Cache contains", cache.data)
 			msg.Accept()
 		}
 		cache.mutex.Unlock()
