@@ -80,35 +80,33 @@ func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc
 		},
 	)
 
-	/*
-		var eventType = graphql.NewObject(
-			graphql.ObjectConfig{
-				Name: "Event",
-				Fields: graphql.Fields{
-					"deviceId": &graphql.Field{
-						Type: graphql.String,
+	var eventType = graphql.NewObject(
+		graphql.ObjectConfig{
+			Name: "Event",
+			Fields: graphql.Fields{
+				"deviceId": &graphql.Field{
+					Type: graphql.String,
+				},
+				"creationTime": &graphql.Field{
+					Type: graphql.String,
+				},
+				"temperature": &graphql.Field{
+					Type: graphql.Int,
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						e := p.Source.(event)
+						return e.Data["temperature"], nil
 					},
-					"creationTime": &graphql.Field{
-						Type: graphql.String,
-					},
-					"temperature": &graphql.Field{
-						Type: graphql.Int,
-						Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-							e := p.Source.(event)
-							return e.Data["temperature"], nil
-						},
-					},
-					"motion": &graphql.Field{
-						Type: graphql.Boolean,
-						Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-							e := p.Source.(event)
-							return e.Data["motion"], nil
-						},
+				},
+				"motion": &graphql.Field{
+					Type: graphql.Boolean,
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						e := p.Source.(event)
+						return e.Data["motion"], nil
 					},
 				},
 			},
-		)
-	*/
+		},
+	)
 
 	var queryType = graphql.NewObject(
 		graphql.ObjectConfig{
@@ -121,23 +119,21 @@ func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc
 						return data, err
 					},
 				},
-				/*
-					"events": &graphql.Field{
-						Type: graphql.NewList(eventType),
-						Args: graphql.FieldConfigArgument{
-							"deviceId": &graphql.ArgumentConfig{
-								Type: graphql.String,
-							},
-						},
-						Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-							deviceId, ok := p.Args["deviceId"].(string)
-							if ok {
-								return eventFetcher(deviceId)
-							}
-							return nil, nil
+				"events": &graphql.Field{
+					Type: graphql.NewList(eventType),
+					Args: graphql.FieldConfigArgument{
+						"deviceId": &graphql.ArgumentConfig{
+							Type: graphql.String,
 						},
 					},
-				*/
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						deviceId, ok := p.Args["deviceId"].(string)
+						if ok {
+							return eventFetcher(deviceId)
+						}
+						return nil, nil
+					},
+				},
 			},
 		})
 
@@ -176,10 +172,8 @@ func main() {
 	}
 	flag.Parse()
 
-	/*
-		username := fmt.Sprintf("device-registry@%s", tenantId)
-		deviceRegistryClient := &http.Client{}
-	*/
+	username := fmt.Sprintf("device-registry@%s", tenantId)
+	deviceRegistryClient := &http.Client{}
 	cache := eventCache{
 		data: make([]event, 0),
 	}
@@ -187,39 +181,26 @@ func main() {
 	go syncEventCache(eventStoreUrl, &cache)
 
 	schema := createSchema(func() ([]device, error) {
-		/*
-			req, err := http.NewRequest("GET", fmt.Sprintf("%s/%s", deviceRegistrationApi, tenantId), nil)
-			if err != nil {
-				return nil, err
-			}
-			req.SetBasicAuth(username, tenantPassword)
+		req, err := http.NewRequest("GET", fmt.Sprintf("%s/%s", deviceRegistrationApi, tenantId), nil)
+		if err != nil {
+			return nil, err
+		}
+		req.SetBasicAuth(username, tenantPassword)
 
-			resp, err := deviceRegistryClient.Do(req)
-			if err != nil {
-				return nil, err
-			}
-			defer resp.Body.Close()
-			body, err := ioutil.ReadAll(resp.Body)
+		resp, err := deviceRegistryClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		body, err := ioutil.ReadAll(resp.Body)
 
-			var result deviceRegistryResponse
-			err = json.Unmarshal(body, &result)
-			if err != nil {
-				return nil, err
-			}
-			fmt.Println("Devices", result.Devices)
-			return result.Devices, nil
-		*/
-		return []device{
-			device{
-				ID:          "1",
-				Enabled:     true,
-				Name:        "test1",
-				Description: "desc1",
-				Sensors:     []string{"s1", "s2"},
-				Events:      []event{},
-			},
-		}, nil
-
+		var result deviceRegistryResponse
+		err = json.Unmarshal(body, &result)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Println("Devices", result.Devices)
+		return result.Devices, nil
 	}, func(deviceId string) ([]event, error) {
 		cache.mutex.Lock()
 		defer cache.mutex.Unlock()
@@ -232,16 +213,12 @@ func main() {
 		return ret, nil
 	})
 
-	http.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("uri: %s", r.URL.Query())
+	http.HandleFunc("/graphql", BasicAuth(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept")
-		log.Printf("Headers: %s", r.Header)
-		log.Println("Method", r.Method)
 		if r.Method == "POST" {
 			body, err := ioutil.ReadAll(r.Body)
 			if err != nil {
-				log.Println("ERROR READ BODY ", err)
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
@@ -249,18 +226,32 @@ func main() {
 			var data queryBody
 			err = json.Unmarshal(body, &data)
 			if err != nil {
-				log.Println("ERROR DECODE", err)
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			log.Printf("QUERY '%s'\n", data.Query)
 			result := executeQuery(data.Query, schema)
 			json.NewEncoder(w).Encode(result)
 		}
-	})
+	}, "test", "test", "teig"))
 
 	log.Println("Now server is running on port 8080")
 	http.ListenAndServe(":8080", nil)
+}
+
+func BasicAuth(handler http.HandlerFunc, username, password, realm string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		user, pass, ok := r.BasicAuth()
+
+		if !ok || subtle.ConstantTimeCompare([]byte(user), []byte(username)) != 1 || subtle.ConstantTimeCompare([]byte(pass), []byte(password)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Basic realm="`+realm+`"`)
+			w.WriteHeader(401)
+			w.Write([]byte("Unauthorised.\n"))
+			return
+		}
+
+		handler(w, r)
+	}
 }
 
 func syncEventCache(eventStoreUrl string, cache *eventCache) error {
