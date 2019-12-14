@@ -33,7 +33,6 @@ func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc
 				"id": &graphql.Field{
 					Type: graphql.String,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						fmt.Println("Trying to resolve")
 						d := p.Source.(api.Device)
 						return d.ID, nil
 					},
@@ -132,13 +131,17 @@ func executeQuery(query string, schema graphql.Schema) *graphql.Result {
 
 func main() {
 	var eventStoreUrl string
+	var topic string
+	var offset int64
 	var deviceRegistryUrl string
 	var username string
 	var password string
-	flag.StringVar(&eventStoreUrl, "a", "amqp://127.0.0.1:5672", "Address of AMQP event store")
+	flag.StringVar(&eventStoreUrl, "a", "127.0.0.1:5672", "Address of AMQP event store")
 	flag.StringVar(&deviceRegistryUrl, "d", "", "Device Registration API")
 	flag.StringVar(&username, "u", "", "Device registry username")
 	flag.StringVar(&password, "p", "", "Device registry password")
+	flag.StringVar(&topic, "t", "events", "Event store topic")
+	flag.Int64Var(&offset, "o", 0, "Event store offset")
 
 	flag.Usage = func() {
 		fmt.Printf("Usage of %s:\n", os.Args[0])
@@ -149,7 +152,7 @@ func main() {
 	deviceRegistryClient := api.NewDeviceRegistryClient(deviceRegistryUrl, username, password)
 	eventCache := api.NewEventCache(eventStoreUrl)
 
-	go eventCache.Run()
+	go eventCache.Run(topic, offset)
 
 	schema := createSchema(deviceRegistryClient.ListDevices, eventCache.ListEvents)
 	http.HandleFunc("/graphql",
@@ -162,7 +165,6 @@ func main() {
 					http.Error(w, err.Error(), http.StatusBadRequest)
 					return
 				}
-				fmt.Println("BODY: ", string(body))
 				var data queryBody
 				err = json.Unmarshal(body, &data)
 				if err != nil {

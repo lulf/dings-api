@@ -5,12 +5,13 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"log"
+	"net"
 	"sync"
 
-	"pack.ag/amqp"
+	"github.com/apache/qpid-proton/go/pkg/amqp"
+	"github.com/apache/qpid-proton/go/pkg/electron"
 )
 
 type eventCache struct {
@@ -26,44 +27,46 @@ func NewEventCache(eventStoreUrl string) *eventCache {
 	}
 }
 
-func (cache *eventCache) Run() error {
-	client, err := amqp.Dial(cache.eventStoreUrl)
+func (cache *eventCache) Run(topic string, offset int64) error {
+	tcpConn, err := net.Dial("tcp", cache.eventStoreUrl)
 	if err != nil {
+		log.Println("Dial:", err)
 		return err
 	}
 
-	session, err := client.NewSession()
-	if err != nil {
-		return err
-	}
+	amqpConn, err := electron.NewConnection(tcpConn, electron.ContainerId("teig-api"))
 
-	receiver, err := session.NewReceiver(amqp.LinkSourceAddress("events"), amqp.LinkCredit(10)) //, amqp.LinkSelectorFilter("offset=0"))
+	props := map[amqp.Symbol]interface{}{"offset": offset}
+	sopts := []electron.LinkOption{electron.Source(topic), electron.Filter(props)}
+	r, err := amqpConn.Receiver(sopts...)
 	if err != nil {
+		log.Println("Receiver:", err)
 		return err
 	}
 
 	log.Printf("Connected to event store %s", cache.eventStoreUrl)
-
 	for {
-		msg, err := receiver.Receive(context.TODO())
-		if err != nil {
-			log.Fatal("Error reading message from AMQP:", err)
-		}
-
-		cache.mutex.Lock()
-
-		var result Event
-		err = json.Unmarshal(msg.GetData(), &result)
-		if err != nil {
-			msg.Reject(nil)
-			log.Print("Error decoding message:", err)
+		if rm, err := r.Receive(); err == nil {
+			msg := rm.Message
+			var result Event
+			err = json.Unmarshal([]byte(msg.Body().(amqp.Binary)), &result)
+			if err != nil {
+				rm.Reject()
+				log.Println("Error decoding message:", err)
+			} else {
+				cache.mutex.Lock()
+				cache.data = append(cache.data, result)
+				cache.mutex.Unlock()
+				rm.Accept()
+			}
+		} else if err == electron.Closed {
+			return nil
 		} else {
-			cache.data = append(cache.data, result)
-			log.Println("Cache contains", cache.data)
-			msg.Accept()
+			log.Println("receive error %v", err)
+			return err
 		}
-		cache.mutex.Unlock()
 	}
+	return nil
 }
 
 func (cache *eventCache) ListEvents(deviceId string) ([]Event, error) {
