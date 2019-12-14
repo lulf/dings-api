@@ -5,52 +5,25 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
-	"sync"
 
-	"crypto/subtle"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
 
 	"github.com/graphql-go/graphql"
-	"pack.ag/amqp"
+	"github.com/lulf/teig-api/pkg/api"
 )
-
-type deviceRegistryResponse struct {
-	Devices []device `json:"devices"`
-}
-
-type device struct {
-	ID          string   `json:"device-id"`
-	Enabled     bool     `json:"enabled"`
-	Name        string   `json:"name,omitempty"`
-	Description string   `json:"description,omitempty"`
-	Sensors     []string `json:"sensors,omitempty"`
-	Events      []event  `json:"events,omitempty"`
-}
-
-type event struct {
-	DeviceId     string                 `json:"deviceId"`
-	CreationTime int64                  `json:"creationTime"`
-	Data         map[string]interface{} `json:"data"`
-}
-
-type eventCache struct {
-	mutex sync.Mutex
-	data  []event
-}
 
 type queryBody struct {
 	Query string `json:"query"`
 }
 
-type deviceFetcherFunc func() ([]device, error)
-type eventFetcherFunc func(string) ([]event, error)
+type deviceFetcherFunc func() ([]api.Device, error)
+type eventFetcherFunc func(string) ([]api.Event, error)
 
 func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc) graphql.Schema {
 	var deviceType = graphql.NewObject(
@@ -61,7 +34,7 @@ func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc
 					Type: graphql.String,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						fmt.Println("Trying to resolve")
-						d := p.Source.(device)
+						d := p.Source.(api.Device)
 						return d.ID, nil
 					},
 				},
@@ -94,14 +67,14 @@ func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc
 				"temperature": &graphql.Field{
 					Type: graphql.Int,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						e := p.Source.(event)
+						e := p.Source.(api.Event)
 						return e.Data["temperature"], nil
 					},
 				},
 				"motion": &graphql.Field{
 					Type: graphql.Boolean,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						e := p.Source.(event)
+						e := p.Source.(api.Event)
 						return e.Data["motion"], nil
 					},
 				},
@@ -128,10 +101,8 @@ func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc
 						},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						fmt.Println("Resolving events")
 						deviceId, ok := p.Args["deviceId"].(string)
 						if ok {
-							fmt.Println("Resolving events for device", deviceId)
 							return eventFetcher(deviceId)
 						}
 						return nil, nil
@@ -161,77 +132,27 @@ func executeQuery(query string, schema graphql.Schema) *graphql.Result {
 
 func main() {
 	var eventStoreUrl string
-	var deviceRegistrationApi string
-	var tenantId string
-	var tenantPassword string
+	var deviceRegistryUrl string
+	var username string
+	var password string
 	flag.StringVar(&eventStoreUrl, "a", "amqp://127.0.0.1:5672", "Address of AMQP event store")
-	flag.StringVar(&deviceRegistrationApi, "d", "https://manage.bosch-iot-hub.com/registration", "Device Registration API")
-	flag.StringVar(&tenantId, "t", "", "Tenant ID")
-	flag.StringVar(&tenantPassword, "p", "", "Tenant Password")
+	flag.StringVar(&deviceRegistryUrl, "d", "", "Device Registration API")
+	flag.StringVar(&username, "u", "", "Device registry username")
+	flag.StringVar(&password, "p", "", "Device registry password")
 
 	flag.Usage = func() {
 		fmt.Printf("Usage of %s:\n", os.Args[0])
-		fmt.Printf("    [-a event_store_url] [-d device_registration_api_url] -t tenant_id -p password \n")
+		fmt.Printf("    [-a event_store_url] [-d device_registry_url] -u username -p password \n")
 	}
 	flag.Parse()
 
-	username := fmt.Sprintf("device-registry@%s", tenantId)
-	deviceRegistryClient := &http.Client{}
-	cache := eventCache{
-		data: make([]event, 0),
-	}
+	deviceRegistryClient := api.NewDeviceRegistryClient(deviceRegistryUrl, username, password)
+	eventCache := api.NewEventCache(eventStoreUrl)
 
-	go syncEventCache(eventStoreUrl, &cache)
+	go eventCache.Run()
 
-	schema := createSchema(func() ([]device, error) {
-		req, err := http.NewRequest("GET", fmt.Sprintf("%s/%s", deviceRegistrationApi, tenantId), nil)
-		if err != nil {
-			return nil, err
-		}
-		req.SetBasicAuth(username, tenantPassword)
-
-		resp, err := deviceRegistryClient.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		defer resp.Body.Close()
-		body, err := ioutil.ReadAll(resp.Body)
-
-		var result deviceRegistryResponse
-		err = json.Unmarshal(body, &result)
-		if err != nil {
-			return nil, err
-		}
-		fmt.Println("Devices", result.Devices)
-		/*
-			return []device{
-				device{
-					ID:          "1",
-					Enabled:     true,
-					Name:        "test1",
-					Description: "desc1",
-					Sensors:     []string{"s1", "s2"},
-					Events:      []event{},
-				},
-			}, nil
-		*/
-		return result.Devices, nil
-	}, func(deviceId string) ([]event, error) {
-		cache.mutex.Lock()
-		defer cache.mutex.Unlock()
-		var ret []event = make([]event, 0)
-		for _, e := range cache.data {
-			fmt.Println("Comparing", e.DeviceId, deviceId)
-			if e.DeviceId == deviceId {
-				fmt.Println("Compared", e.DeviceId, deviceId)
-				ret = append(ret, e)
-			}
-		}
-		fmt.Println("Got events", ret)
-		return ret, nil
-	})
-
-	http.HandleFunc("/graphql", //BasicAuth(
+	schema := createSchema(deviceRegistryClient.ListDevices, eventCache.ListEvents)
+	http.HandleFunc("/graphql",
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept")
@@ -251,64 +172,8 @@ func main() {
 				result := executeQuery(data.Query, schema)
 				json.NewEncoder(w).Encode(result)
 			}
-		}) //, "test", "test", "teig"))
+		})
 
 	log.Println("Now server is running on port 8080")
 	http.ListenAndServe(":8080", nil)
-}
-
-func BasicAuth(handler http.HandlerFunc, username, password, realm string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-
-		user, pass, ok := r.BasicAuth()
-
-		if !ok || subtle.ConstantTimeCompare([]byte(user), []byte(username)) != 1 || subtle.ConstantTimeCompare([]byte(pass), []byte(password)) != 1 {
-			w.Header().Set("WWW-Authenticate", `Basic realm="`+realm+`"`)
-			w.WriteHeader(401)
-			w.Write([]byte("Unauthorised.\n"))
-			return
-		}
-
-		handler(w, r)
-	}
-}
-
-func syncEventCache(eventStoreUrl string, cache *eventCache) error {
-	client, err := amqp.Dial(eventStoreUrl)
-	if err != nil {
-		return err
-	}
-
-	session, err := client.NewSession()
-	if err != nil {
-		return err
-	}
-
-	receiver, err := session.NewReceiver(amqp.LinkSourceAddress("events"), amqp.LinkCredit(10)) //, amqp.LinkSelectorFilter("offset=0"))
-	if err != nil {
-		return err
-	}
-
-	log.Printf("Connected to event store %s", eventStoreUrl)
-
-	for {
-		msg, err := receiver.Receive(context.TODO())
-		if err != nil {
-			log.Fatal("Error reading message from AMQP:", err)
-		}
-
-		cache.mutex.Lock()
-
-		var result event
-		err = json.Unmarshal(msg.GetData(), &result)
-		if err != nil {
-			msg.Reject(nil)
-			log.Print("Error decoding message:", err)
-		} else {
-			cache.data = append(cache.data, result)
-			log.Println("Cache contains", cache.data)
-			msg.Accept()
-		}
-		cache.mutex.Unlock()
-	}
 }

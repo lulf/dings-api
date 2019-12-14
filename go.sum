@@ -1,3 +1,4 @@
+github.com/apache/qpid-proton v0.0.0-20191030003658-d693de22cceb h1:2DDRgS1zmyol6Fr1B2QW7uJP9eaCiNVvbwVC4fyiw2s=
 github.com/apache/qpid-proton v0.0.0-20191030003658-d693de22cceb/go.mod h1:KzZ93AoKqo5DrIyNm7lQ8geWIJWngn+vLwKSpRtJ/cc=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/graphql-go/graphql v0.7.8 h1:769CR/2JNAhLG9+aa8pfLkKdR0H+r5lsQqling5WwpU=
