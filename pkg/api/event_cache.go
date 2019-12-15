@@ -76,6 +76,7 @@ func (cache *eventCache) ListEvents(deviceId string, max int, start int64) ([]Ev
 	numValues := 0
 	for _, e := range cache.data {
 		if e.DeviceId == deviceId && e.CreationTime >= start {
+			log.Println("Adding event since ", e.CreationTime, "is greater than", start)
 			ret = append(ret, e)
 			numValues += 1
 			if max > 0 && numValues >= max {
