@@ -104,27 +104,24 @@ func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc
 						"deviceId": &graphql.ArgumentConfig{
 							Type: graphql.String,
 						},
-						"start": &graphql.ArgumentConfig{
-							Type: graphql.Int,
+						"since": &graphql.ArgumentConfig{
+							Type:         graphql.Int,
+							DefaultValue: 0,
 						},
 						"max": &graphql.ArgumentConfig{
-							Type: graphql.Int,
+							Type:         graphql.Int,
+							DefaultValue: 0,
 						},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						max, ok := p.Args["max"].(int)
-						if !ok {
-							max = 0
-						}
+						log.Println("Args", p.Args)
 
-						start, ok := p.Args["start"].(int64)
-						if !ok {
-							start = 0
-						}
+						max := p.Args["max"].(int)
+						since := p.Args["since"].(int)
 
 						deviceId, ok := p.Args["deviceId"].(string)
 						if ok {
-							return eventFetcher(deviceId, max, start)
+							return eventFetcher(deviceId, max, int64(since))
 						}
 						return nil, nil
 					},
