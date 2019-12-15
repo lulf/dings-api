@@ -69,13 +69,18 @@ func (cache *eventCache) Run(topic string, offset int64) error {
 	return nil
 }
 
-func (cache *eventCache) ListEvents(deviceId string) ([]Event, error) {
+func (cache *eventCache) ListEvents(deviceId string, max int) ([]Event, error) {
 	cache.mutex.Lock()
 	defer cache.mutex.Unlock()
 	var ret []Event = make([]Event, 0)
+	numValues := 0
 	for _, e := range cache.data {
 		if e.DeviceId == deviceId {
 			ret = append(ret, e)
+			numValues += 1
+			if max > 0 && numValues >= max {
+				break
+			}
 		}
 	}
 	return ret, nil
