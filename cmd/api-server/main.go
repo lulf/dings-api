@@ -104,6 +104,9 @@ func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc
 						"deviceId": &graphql.ArgumentConfig{
 							Type: graphql.String,
 						},
+						"max": &graphql.ArgumentConfig{
+							Type: graphql.Int,
+						},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						deviceId, ok := p.Args["deviceId"].(string)
