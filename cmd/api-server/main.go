@@ -23,7 +23,7 @@ type queryBody struct {
 }
 
 type deviceFetcherFunc func() ([]api.Device, error)
-type eventFetcherFunc func(string, int) ([]api.Event, error)
+type eventFetcherFunc func(string, int, int64) ([]api.Event, error)
 
 func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc) graphql.Schema {
 	var deviceType = graphql.NewObject(
@@ -74,7 +74,7 @@ func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc
 					Type: graphql.String,
 				},
 				"creationTime": &graphql.Field{
-					Type: graphql.String,
+					Type: graphql.Int,
 				},
 				"data": &graphql.Field{
 					Type: eventDataType,
@@ -104,19 +104,27 @@ func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc
 						"deviceId": &graphql.ArgumentConfig{
 							Type: graphql.String,
 						},
+						"start": &graphql.ArgumentConfig{
+							Type: graphql.Int,
+						},
 						"max": &graphql.ArgumentConfig{
 							Type: graphql.Int,
 						},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						max, ok := p.Args["max"].(int)
+						if !ok {
+							max = 0
+						}
+
+						start, ok := p.Args["start"].(int64)
+						if !ok {
+							start = 0
+						}
+
 						deviceId, ok := p.Args["deviceId"].(string)
 						if ok {
-							max, ok := p.Args["max"].(int)
-							if ok {
-								return eventFetcher(deviceId, max)
-							} else {
-								return eventFetcher(deviceId, 0)
-							}
+							return eventFetcher(deviceId, max, start)
 						}
 						return nil, nil
 					},
