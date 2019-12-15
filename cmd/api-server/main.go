@@ -53,6 +53,19 @@ func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc
 		},
 	)
 
+	var eventDataType = graphql.NewObject(
+		graphql.ObjectConfig{
+			Name: "Data",
+			Fields: graphql.Fields{
+				"motion": &graphql.Field{
+					Type: graphql.Boolean,
+				},
+				"temperature": &graphql.Field{
+					Type: graphql.Float,
+				},
+			},
+		})
+
 	var eventType = graphql.NewObject(
 		graphql.ObjectConfig{
 			Name: "Event",
@@ -63,18 +76,11 @@ func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc
 				"creationTime": &graphql.Field{
 					Type: graphql.String,
 				},
-				"temperature": &graphql.Field{
-					Type: graphql.Int,
+				"data": &graphql.Field{
+					Type: eventDataType,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						e := p.Source.(api.Event)
-						return e.Data["temperature"], nil
-					},
-				},
-				"motion": &graphql.Field{
-					Type: graphql.Boolean,
-					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						e := p.Source.(api.Event)
-						return e.Data["motion"], nil
+						return e.Data, nil
 					},
 				},
 			},
