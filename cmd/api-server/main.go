@@ -53,6 +53,22 @@ func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc
 		},
 	)
 
+	var temperatureType = graphql.NewObject(
+		graphql.ObjectConfig{
+			Name: "Temperature",
+			Fields: graphql.Fields{
+				"celcius": &graphql.Field{
+					Type: graphql.Float,
+				},
+				"humidity": &graphql.Field{
+					Type: graphql.Float,
+				},
+				"heatindexCelcius": &graphql.Field{
+					Type: graphql.Float,
+				},
+			},
+		})
+
 	var eventDataType = graphql.NewObject(
 		graphql.ObjectConfig{
 			Name: "Data",
@@ -61,7 +77,7 @@ func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc
 					Type: graphql.Boolean,
 				},
 				"temperature": &graphql.Field{
-					Type: graphql.Float,
+					Type: temperatureType,
 				},
 			},
 		})
