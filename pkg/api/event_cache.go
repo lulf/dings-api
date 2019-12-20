@@ -15,6 +15,7 @@ import (
 )
 
 type eventCache struct {
+	receiver      electron.Receiver
 	eventStoreUrl string
 	mutex         sync.Mutex
 	data          []Event
@@ -27,26 +28,27 @@ func NewEventCache(eventStoreUrl string) *eventCache {
 	}
 }
 
-func (cache *eventCache) Run(topic string, offset int64) error {
+func (cache *eventCache) Connect(topic string, offset int64) error {
 	tcpConn, err := net.Dial("tcp", cache.eventStoreUrl)
 	if err != nil {
-		log.Println("Dial:", err)
 		return err
 	}
-
 	amqpConn, err := electron.NewConnection(tcpConn, electron.ContainerId("teig-api"))
 
 	props := map[amqp.Symbol]interface{}{"offset": offset}
 	sopts := []electron.LinkOption{electron.Source(topic), electron.Filter(props)}
 	r, err := amqpConn.Receiver(sopts...)
 	if err != nil {
-		log.Println("Receiver:", err)
 		return err
 	}
+	cache.receiver = r
+	return nil
+}
 
+func (cache *eventCache) Run(done chan error) {
 	log.Printf("Connected to event store %s", cache.eventStoreUrl)
 	for {
-		if rm, err := r.Receive(); err == nil {
+		if rm, err := cache.receiver.Receive(); err == nil {
 			msg := rm.Message
 			var result Event
 			err = json.Unmarshal([]byte(msg.Body().(amqp.Binary)), &result)
@@ -60,13 +62,14 @@ func (cache *eventCache) Run(topic string, offset int64) error {
 				rm.Accept()
 			}
 		} else if err == electron.Closed {
-			return nil
+			done <- nil
+			break
 		} else {
 			log.Println("receive error %v", err)
-			return err
+			done <- err
+			break
 		}
 	}
-	return nil
 }
 
 func (cache *eventCache) ListEvents(deviceId string, max int, since int64) ([]Event, error) {

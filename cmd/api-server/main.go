@@ -187,7 +187,13 @@ func main() {
 	deviceRegistryClient := api.NewDeviceRegistryClient(deviceRegistryUrl, username, password)
 	eventCache := api.NewEventCache(eventStoreUrl)
 
-	go eventCache.Run(topic, offset)
+	err := eventCache.Connect(topic, offset)
+	if err != nil {
+		log.Println("Error connecting event cache", err)
+		os.Exit(1)
+	}
+	done := make(chan error)
+	go eventCache.Run(done)
 
 	schema := createSchema(deviceRegistryClient.ListDevices, eventCache.ListEvents)
 	http.HandleFunc("/graphql",
@@ -211,6 +217,23 @@ func main() {
 			}
 		})
 
-	log.Println("Now server is running on port 8080")
-	http.ListenAndServe(":8080", nil)
+	go func() {
+		err := http.ListenAndServe(":8080", nil)
+		if err != nil {
+			done <- err
+		}
+		log.Println("Now server is running on port 8080")
+	}()
+
+	// Exit if any of our processes complete
+	for {
+		err := <-done
+		if err != nil {
+			log.Println("Finished with error", err)
+			os.Exit(1)
+		} else {
+			log.Println("Finished without error")
+			os.Exit(0)
+		}
+	}
 }
