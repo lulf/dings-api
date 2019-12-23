@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"encoding/json"
 	"io/ioutil"
@@ -130,8 +131,6 @@ func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc
 						},
 					},
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						log.Println("Args", p.Args)
-
 						max := p.Args["max"].(int)
 						since := p.Args["since"].(int)
 
@@ -168,6 +167,7 @@ func main() {
 	var eventStoreUrl string
 	var topic string
 	var offset int64
+	var window int64
 	var deviceRegistryUrl string
 	var username string
 	var password string
@@ -177,6 +177,7 @@ func main() {
 	flag.StringVar(&password, "p", "", "Device registry password")
 	flag.StringVar(&topic, "t", "events", "Event store topic")
 	flag.Int64Var(&offset, "o", 0, "Event store offset")
+	flag.Int64Var(&window, "w", 172800, "Window of data to keep (in seconds)")
 
 	flag.Usage = func() {
 		fmt.Printf("Usage of %s:\n", os.Args[0])
@@ -187,7 +188,9 @@ func main() {
 	deviceRegistryClient := api.NewDeviceRegistryClient(deviceRegistryUrl, username, password)
 	eventCache := api.NewEventCache(eventStoreUrl)
 
-	err := eventCache.Connect(topic, offset)
+	now := time.Now().UTC().Unix()
+	since := now - window
+	err := eventCache.Connect(topic, offset, since)
 	if err != nil {
 		log.Println("Error connecting event cache", err)
 		os.Exit(1)

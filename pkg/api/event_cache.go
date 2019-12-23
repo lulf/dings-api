@@ -28,14 +28,14 @@ func NewEventCache(eventStoreUrl string) *eventCache {
 	}
 }
 
-func (cache *eventCache) Connect(topic string, offset int64) error {
+func (cache *eventCache) Connect(topic string, offset int64, since int64) error {
 	tcpConn, err := net.Dial("tcp", cache.eventStoreUrl)
 	if err != nil {
 		return err
 	}
 	amqpConn, err := electron.NewConnection(tcpConn, electron.ContainerId("teig-api"))
 
-	props := map[amqp.Symbol]interface{}{"offset": offset}
+	props := map[amqp.Symbol]interface{}{"offset": offset, "since": since}
 	sopts := []electron.LinkOption{electron.Source(topic), electron.Filter(props)}
 	r, err := amqpConn.Receiver(sopts...)
 	if err != nil {
