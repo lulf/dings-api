@@ -95,7 +95,7 @@ func (cache *eventCache) ListEvents(deviceId string, max int, since int64) ([]Ev
 	var ret []Event = make([]Event, 0)
 	numValues := 0
 	for _, e := range cache.data {
-		if e.DeviceId == deviceId && e.CreationTime >= since {
+		if (deviceId == "" || e.DeviceId == deviceId) && e.CreationTime >= since {
 			ret = append(ret, e)
 			numValues += 1
 			if max > 0 && numValues >= max {
