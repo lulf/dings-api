@@ -36,7 +36,7 @@ func (cache *eventCache) Connect(topic string, offset int64) error {
 	if err != nil {
 		return err
 	}
-	amqpConn, err := electron.NewConnection(tcpConn, electron.ContainerId("teig-api"))
+	amqpConn, err := electron.NewConnection(tcpConn, electron.ContainerId("dings-api"))
 
 	now := time.Now().UTC().Unix()
 	since := now - cache.window

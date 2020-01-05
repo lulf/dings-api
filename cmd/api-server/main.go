@@ -15,7 +15,7 @@ import (
 	"net/http"
 
 	"github.com/graphql-go/graphql"
-	"github.com/lulf/teig-api/pkg/api"
+	"github.com/lulf/dings-api/pkg/api"
 )
 
 type queryBody struct {

@@ -1,3 +1,3 @@
-# teig-api
+# dings-api
 
-The teig-api component provides a GraphQL API for working with Teig Devices.
+The dings-api component provides a GraphQL API for working with Dingses.
