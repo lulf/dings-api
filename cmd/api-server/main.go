@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"time"
 
 	"encoding/json"
 	"io/ioutil"
@@ -189,11 +188,9 @@ func main() {
 	flag.Parse()
 
 	deviceRegistryClient := api.NewDeviceRegistryClient(deviceRegistryUrl, username, password)
-	eventCache := api.NewEventCache(eventStoreUrl)
+	eventCache := api.NewEventCache(eventStoreUrl, window)
 
-	now := time.Now().UTC().Unix()
-	since := now - window
-	err := eventCache.Connect(topic, offset, since)
+	err := eventCache.Connect(topic, offset)
 	if err != nil {
 		log.Println("Error connecting event cache", err)
 		os.Exit(1)

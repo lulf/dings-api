@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/apache/qpid-proton/go/pkg/amqp"
 	"github.com/apache/qpid-proton/go/pkg/electron"
@@ -19,21 +20,26 @@ type eventCache struct {
 	eventStoreUrl string
 	mutex         sync.Mutex
 	data          []Event
+	window        int64
 }
 
-func NewEventCache(eventStoreUrl string) *eventCache {
+func NewEventCache(eventStoreUrl string, window int64) *eventCache {
 	return &eventCache{
 		eventStoreUrl: eventStoreUrl,
+		window:        window,
 		data:          make([]Event, 0),
 	}
 }
 
-func (cache *eventCache) Connect(topic string, offset int64, since int64) error {
+func (cache *eventCache) Connect(topic string, offset int64) error {
 	tcpConn, err := net.Dial("tcp", cache.eventStoreUrl)
 	if err != nil {
 		return err
 	}
 	amqpConn, err := electron.NewConnection(tcpConn, electron.ContainerId("teig-api"))
+
+	now := time.Now().UTC().Unix()
+	since := now - cache.window
 
 	props := map[amqp.Symbol]interface{}{"offset": offset, "since": since}
 	sopts := []electron.LinkOption{electron.Source(topic), electron.Filter(props)}
@@ -57,7 +63,18 @@ func (cache *eventCache) Run(done chan error) {
 				log.Println("Error decoding message:", err)
 			} else {
 				cache.mutex.Lock()
-				cache.data = append(cache.data, result)
+				// Prune old elements
+				now := time.Now().UTC().Unix()
+				since := now - cache.window
+				startIndex := 0
+				for i, entry := range cache.data {
+					if entry.CreationTime < since {
+						startIndex = i
+					} else {
+						break
+					}
+				}
+				cache.data = append(cache.data[startIndex:], result)
 				cache.mutex.Unlock()
 				rm.Accept()
 			}
