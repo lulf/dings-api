@@ -80,7 +80,7 @@ func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc
 					Type: temperatureType,
 				},
 				"soil": &graphql.Field{
-					Type: graphql.NewList(graphql.Int),
+					Type: graphql.NewList(graphql.Float),
 				},
 			},
 		})
