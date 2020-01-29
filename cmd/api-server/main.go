@@ -69,6 +69,19 @@ func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc
 			},
 		})
 
+	var soilType = graphql.NewObject(
+		graphql.ObjectConfig{
+			Name: "Soil",
+			Fields: graphql.Fields{
+				"numSamples": &graphql.Field{
+					Type: graphql.Int,
+				},
+				"humidity": &graphql.Field{
+					Type: graphql.NewList(graphql.Float),
+				},
+			},
+		})
+
 	var eventDataType = graphql.NewObject(
 		graphql.ObjectConfig{
 			Name: "Data",
@@ -80,7 +93,7 @@ func createSchema(deviceFetcher deviceFetcherFunc, eventFetcher eventFetcherFunc
 					Type: temperatureType,
 				},
 				"soil": &graphql.Field{
-					Type: graphql.NewList(graphql.Float),
+					Type: soilType,
 				},
 			},
 		})
